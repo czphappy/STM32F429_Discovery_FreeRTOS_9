@@ -59,8 +59,9 @@ void Red_LED_On(void);
 void Red_LED_Off(void);
 void Green_LED_On(void);
 void Green_LED_Off(void);
-extern unsigned long  ReceiverFlag =0;
-extern unsigned long  SenderFlag=0;
+extern unsigned long ReceiverFlag =0;
+extern unsigned long nflag=0;
+
 xQueueHandle MsgQueue;  
  /*
   * @brief  Main program
@@ -181,14 +182,14 @@ void Green_LED_Off(void)
 void Sender_Task(void *pvParameters)
 {
     unsigned long  SendNum = 1; 
+    unsigned long SenderSum =0;
     for( ;; )  
       {  
         vTaskDelay(2);  
         /* 向队列中填充内容 */  
         xQueueSend( MsgQueue, ( void* )&SendNum, 0 );  
-        SendNum++; 
-        SenderFlag=SendNum+SenderFlag;
-      
+        SenderSum=SendNum+SenderSum;
+        SendNum=(SendNum+1)%10000;
       }  
 }
 
@@ -197,7 +198,8 @@ void Sender_Task(void *pvParameters)
  */
 void Receiver_Task(void *pvParameters)
 {
-    unsigned long ReceiverNum = 0;
+    unsigned long ReceiverSum = 0;
+    unsigned long ReceiverNum =1;
     for( ;; )
     {  
         
@@ -205,8 +207,9 @@ void Receiver_Task(void *pvParameters)
         /* 从队列中获取内容 */  
         for( ;xQueueReceive( MsgQueue,&ReceiverNum, 0 ) == pdPASS;)  
         {  
-            ReceiverFlag = ReceiverNum+ReceiverFlag; 
-
+            ReceiverSum = ReceiverNum+ReceiverSum; 
+            nflag++;
+            ReceiverFlag=ReceiverNum;
         }  
     }  
 }
@@ -215,7 +218,7 @@ void Monitor_Task(void *pvParameters)
     for( ;; )  
     {  
         vTaskDelay(10000);
-        if( ReceiverFlag == SenderFlag)  
+        if( ReceiverFlag == (nflag % 10000))  
         {  
              Green_LED_On();
              vTaskDelay(1000);
