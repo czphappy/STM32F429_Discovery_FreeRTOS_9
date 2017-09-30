@@ -28,8 +28,12 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "timers.h"
-
-
+ 
+/* Scheduler includes. */  
+#include "FreeRTOS.h"  
+#include "task.h"  
+#include "queue.h"  
+/* Library includes. */   
 /** @addtogroup STM32F4_Discovery_Peripheral_Examples
   * @{
   */
@@ -48,13 +52,17 @@ GPIO_InitTypeDef  GPIO_InitStructure;
 
 /* Private functions ---------------------------------------------------------*/
 void Hardware_Init(void);
+void Monitor_Task( void *pvParameters );
+void Sender_Task( void *pvParameters );
+void Receiver_Task( void *pvParameters );
 void Red_LED_On(void);
 void Red_LED_Off(void);
 void Green_LED_On(void);
 void Green_LED_Off(void);
-void ToggleLED1_Task(void*);
-void ToggleLED2_Task(void*);
-/**
+extern unsigned long  ReceiverFlag =0;
+extern unsigned long  SenderFlag=0;
+xQueueHandle MsgQueue;  
+ /*
   * @brief  Main program
   * @param  None
   * @retval None
@@ -68,27 +76,36 @@ int main(void)
         system_stm32f4xx.c file
      */
        Hardware_Init();
- 
+        
        /* Init and start tracing*/
         vTraceEnable(TRC_INIT);
         vTraceEnable(TRC_START);
-
+      MsgQueue = xQueueCreate( 1000 , sizeof( unsigned long ) );  
+      
        /* Create tasks */
        xTaskCreate(
-		  ToggleLED1_Task,                 /* Function pointer */
-		  "Task_LED1",                          /* Task name - for debugging only*/
+		  Sender_Task,                 /* Function pointer */
+		  ( signed portCHAR * )"Sender_Task", /* Task name - for debugging only*/
 		  configMINIMAL_STACK_SIZE,         /* Stack depth in words */
 		  (void*) NULL,                     /* Pointer to tasks arguments (parameter) */
-		  tskIDLE_PRIORITY + 3UL,           /* Task priority*/
+		  tskIDLE_PRIORITY + 2UL,           /* Task priority*/
 		  NULL                              /* Task handle */
        );
 
        xTaskCreate(
-		  ToggleLED2_Task,                 /* Function pointer */
-		  "Task_LED2",                          /* Task name - for debugging only*/
+		  Receiver_Task,                 /* Function pointer */
+		  ( signed portCHAR * )"Receiver_Task",  /* Task name - for debugging only*/
 		  configMINIMAL_STACK_SIZE,         /* Stack depth in words */
 		  (void*) NULL,                     /* Pointer to tasks arguments (parameter) */
-		  tskIDLE_PRIORITY + 2UL,           /* Task priority*/
+		  tskIDLE_PRIORITY + 4UL,           /* Task priority*/
+		  NULL                              /* Task handle */
+       );
+       xTaskCreate(
+		  Monitor_Task,                 /* Function pointer */
+		   ( signed portCHAR * )"Monitor_Task", /* Task name - for debugging only*/
+		  configMINIMAL_STACK_SIZE,         /* Stack depth in words */
+		  (void*) NULL,                     /* Pointer to tasks arguments (parameter) */
+		  tskIDLE_PRIORITY + 3UL,           /* Task priority*/
 		  NULL                              /* Task handle */
        );
 
@@ -122,9 +139,8 @@ void Hardware_Init(void)
         GPIO_Init(GPIOG, &GPIO_InitStructure);
 
 }
-/**
- * Red_LED_On: 
- */
+
+
 void Red_LED_On(void)
 {
 //    GPIO_SetBits(GPIOG, GPIO_Pin_14);
@@ -157,63 +173,63 @@ void Green_LED_Off(void)
 //    GPIO_ResetBits(GPIOG, GPIO_Pin_13);
     GPIOG->ODR &= 0xDFFF;
 }
-/**
- * ToggleLED1_Task: Toggle LED1 via RTOS Timer
- */
-void ToggleLED1_Task(void *pvParameters)
-{
-    int led = 0;  
 
-    while (1) 
-    {
-        if(led == 0)
+
+/**
+ * Sender: 
+ */
+void Sender_Task(void *pvParameters)
+{
+    unsigned long  SendNum = 1; 
+    for( ;; )  
+      {  
+        vTaskDelay(2);  
+        /* 向队列中填充内容 */  
+        xQueueSend( MsgQueue, ( void* )&SendNum, 0 );  
+        SendNum++; 
+        SenderFlag=SendNum+SenderFlag;
+      
+      }  
+}
+
+/**
+ * Receiver: 
+ */
+void Receiver_Task(void *pvParameters)
+{
+    unsigned long ReceiverNum = 0;
+    for( ;; )
+    {  
+        
+        vTaskDelay(1000);
+        /* 从队列中获取内容 */  
+        for( ;xQueueReceive( MsgQueue,&ReceiverNum, 0 ) == pdPASS;)  
+        {  
+            ReceiverFlag = ReceiverNum+ReceiverFlag; 
+
+        }  
+    }  
+}
+void Monitor_Task(void *pvParameters)
+{  
+    for( ;; )  
+    {  
+        vTaskDelay(10000);
+        if( ReceiverFlag == SenderFlag)  
+        {  
+             Green_LED_On();
+             vTaskDelay(1000);
+             Green_LED_Off();
+        }  
+        else 
         {
             Red_LED_On();
-            led = 1;
-        } 
-        else
-        {
+            vTaskDelay(1000);
             Red_LED_Off();
-            led = 0;
-         }
-        /*
-        Delay for a period of time. vTaskDelay() places the task into
-        the Blocked state until the period has expired.
-        The delay period is spacified in 'ticks'. We can convert
-        yhis in milisecond with the constant portTICK_RATE_MS.
-        */
-        vTaskDelay(1000 / portTICK_RATE_MS);
-  }
+        }
+    }  
 }
 
-/**
- * ToggleLED2_Task: Toggle LED2 via RTOS Timer
- */
-void ToggleLED2_Task(void *pvParameters)
-
-{
-    int led = 0;  
-    while (1) 
-    {
-        if(led == 0)
-        {
-            Green_LED_On();
-            led = 1;
-        } 
-        else
-        {
-            Green_LED_Off();
-            led = 0;
-         }
-        /*
-        Delay for a period of time. vTaskDelay() places the task into
-        the Blocked state until the period has expired.
-        The delay period is spacified in 'ticks'. We can convert
-        yhis in milisecond with the constant portTICK_RATE_MS.
-        */
-        vTaskDelay(2000 / portTICK_RATE_MS);
-  }
-}
 
 void vApplicationTickHook( void )
 {
